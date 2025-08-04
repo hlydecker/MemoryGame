@@ -1,368 +1,553 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Memory Card Game</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        /* Styles for the card flip animation */
-        .card {
-            transform-style: preserve-3d;
-            transition: transform 0.6s;
-            cursor: pointer;
-        }
-        .card.is-flipped {
-            transform: rotateY(180deg);
-        }
-        .card-face {
-            backface-visibility: hidden;
-            -webkit-backface-visibility: hidden; /* Safari */
-            position: absolute;
-            width: 100%;
-            height: 100%;
-        }
-        .card-face-front {
-            transform: rotateY(180deg);
-        }
-        /* Prevent selection of text on cards */
-        .card-face-front {
-            user-select: none; /* Standard syntax */
-            -webkit-user-select: none; /* Safari */
-            -moz-user-select: none; /* Firefox */
-            -ms-user-select: none; /* Internet Explorer/Edge */
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Memory Card Game</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --card-back: #6366f1; /* indigo-500 */
+      --accent: #6366f1;
+      --match-glow: rgba(250, 204, 21, 0.65); /* amber */
+    }
+    * { -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; }
+    body { font-family: 'Inter', sans-serif; }
+    .game-surface { perspective: 1200px; }
+    /* Card */
+    .card-wrap { position: relative; transform-style: preserve-3d; transition: transform .6s; }
+    .card-wrap.is-flipped { transform: rotateY(180deg); }
+    .card-face { position:absolute; inset:0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+    .card-front { transform: rotateY(180deg); }
+    .card-btn { cursor: pointer; }
+    .matched .card-wrap { animation: pop .5s ease; }
+    .matched .card-front { box-shadow: 0 0 0 3px var(--accent) inset, 0 0 24px var(--match-glow); }
+    .mismatch .card-wrap { animation: shake .4s ease; }
+    @keyframes pop { 0%{transform:rotateY(180deg) scale(.95)} 50%{transform:rotateY(180deg) scale(1.05)} 100%{transform:rotateY(180deg) scale(1)}}
+    @keyframes shake {
+      0%,100%{ transform:translateX(0) rotateY(0) }
+      20%{ transform:translateX(-6px) }
+      40%{ transform:translateX(6px) }
+      60%{ transform:translateX(-3px) }
+      80%{ transform:translateX(3px) }
+    }
+    /* Modal base */
+    .modal { transition: opacity .2s ease; }
+    .modal-panel { transform: translateY(8px) scale(.98); opacity: 0; transition: transform .25s ease, opacity .25s ease; }
+    .modal.open .modal-panel { transform: translateY(0) scale(1); opacity: 1; }
+    /* Confetti canvas sits on top */
+    #confetti-canvas { position: fixed; inset: 0; pointer-events: none; }
+    /* Reduce motion */
+    @media (prefers-reduced-motion: reduce) {
+      .card-wrap, .modal, .modal-panel { transition: none !important; animation: none !important; }
+    }
+  </style>
 </head>
-<body class="bg-gradient-to-br from-indigo-50 to-indigo-200 dark:from-slate-800 dark:to-slate-900 text-slate-800 dark:text-slate-100 flex flex-col items-center justify-center min-h-screen p-4 transition-colors">
+<body class="bg-gradient-to-br from-indigo-50 to-indigo-200 dark:from-slate-800 dark:to-slate-900 text-slate-800 dark:text-slate-100 min-h-screen p-4 transition-colors">
 
-    <div class="w-full max-w-4xl mx-auto">
-        <header class="text-center mb-6">
-            <h1 class="text-4xl md:text-5xl font-bold text-slate-700">Memory Challenge</h1>
-            <p class="text-slate-500 mt-2">Match all the pairs to win the game!</p>
-        </header>
+  <canvas id="confetti-canvas" class="hidden"></canvas>
 
-        <!-- Game Info Bar -->
-        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-white dark:bg-slate-800 rounded-lg shadow-md p-4 mb-6 space-y-2 sm:space-y-0">
-            <div class="flex space-x-6">
-                <div class="text-lg">
-                    <span class="font-semibold">Moves:</span>
-                    <span id="moves-count" class="font-bold text-indigo-600 dark:text-indigo-400">0</span>
-                </div>
-                <div class="text-lg">
-                    <span class="font-semibold">Time:</span>
-                    <span id="timer" class="font-bold text-indigo-600 dark:text-indigo-400">0:00</span>
-                </div>
-            </div>
-            <div class="flex space-x-2">
-                <button id="settings-button" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold rounded-lg shadow-md hover:bg-slate-300 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition-colors">Settings</button>
-                <button id="restart-button" class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition-colors">Restart</button>
-            </div>
+  <div class="w-full max-w-5xl mx-auto">
+    <header class="text-center mb-4 sm:mb-6">
+      <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-800 dark:text-white">Memory Challenge</h1>
+      <p class="text-slate-600 dark:text-slate-300 mt-2">Flip, match, and beat your best time. Goldfish mode for warm-up 🐟</p>
+    </header>
+
+    <!-- Info Bar -->
+    <div class="bg-white/70 dark:bg-slate-800/70 backdrop-blur rounded-xl shadow-md p-4 mb-4 sm:mb-6">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <div class="text-lg"><span class="font-semibold">Moves:</span> <span id="moves" class="font-bold text-indigo-600 dark:text-indigo-400">0</span></div>
+          <div class="text-lg"><span class="font-semibold">Time:</span> <span id="time" class="font-bold text-indigo-600 dark:text-indigo-400">0:00</span></div>
+          <div class="text-lg hidden sm:block"><span class="font-semibold">Best:</span> <span id="best" class="font-bold">—</span></div>
+          <div id="combo" class="text-sm font-semibold px-2 py-1 rounded bg-amber-200/70 text-amber-900 hidden">Combo x<span id="combo-num">1</span>!</div>
         </div>
-
-        <!-- Game Board -->
-        <main class="perspective-1000">
-            <section id="game-board" class="grid gap-3 sm:gap-4">
-                <!-- Cards will be generated by JavaScript -->
-            </section>
-        </main>
+        <div class="flex flex-wrap gap-2">
+          <button id="goldfish" class="px-3 py-2 rounded-lg bg-amber-400 text-amber-950 font-semibold hover:bg-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500">Goldfish 2×2</button>
+          <button id="settings-btn" class="px-3 py-2 rounded-lg bg-slate-200 dark:bg-slate-700 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500">Settings</button>
+          <button id="restart" class="px-3 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">Restart</button>
+        </div>
+      </div>
+      <!-- Progress -->
+      <div class="mt-4">
+        <div class="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+          <div id="progress" class="h-full w-0 bg-gradient-to-r from-indigo-500 to-violet-500 transition-[width] duration-300"></div>
+        </div>
+        <div class="mt-1 text-xs text-slate-500 dark:text-slate-400"><span id="pairs-done">0</span>/<span id="pairs-total">0</span> pairs matched</div>
+      </div>
     </div>
 
-    <!-- Win Modal -->
-    <div id="win-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center hidden transition-opacity duration-300">
-        <div class="bg-white rounded-xl shadow-2xl p-8 text-center transform scale-95 transition-transform duration-300">
-            <h2 class="text-4xl font-bold text-yellow-500 mb-4">You Won!</h2>
-            <p class="text-lg text-slate-600 mb-2">Congratulations, you are a memory master!</p>
-            <p id="win-stats" class="text-slate-500 mb-6">You completed the game in X moves and 0:00.</p>
-            <button id="play-again-button" class="w-full px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition-colors">
-                Play Again
-            </button>
-        </div>
+    <!-- Board -->
+    <main class="game-surface">
+      <section id="board" class="grid gap-2 sm:gap-3"></section>
+    </main>
+  </div>
+
+  <!-- Win Modal -->
+  <div id="win-modal" class="modal fixed inset-0 bg-black/60 flex items-center justify-center opacity-0 pointer-events-none">
+    <div class="modal-panel bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 text-center max-w-md w-11/12">
+      <h2 class="text-4xl font-extrabold text-yellow-500 mb-2">You Won! 🎉</h2>
+      <p id="win-text" class="text-slate-600 dark:text-slate-300 mb-4"></p>
+      <div class="text-sm text-slate-500 dark:text-slate-400 mb-6" id="win-best"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <button id="play-again" class="px-4 py-3 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500">Play Again</button>
+        <button id="close-win" class="px-4 py-3 rounded-lg bg-slate-200 dark:bg-slate-700 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 focus:ring-2 focus:ring-indigo-500">Close</button>
+      </div>
     </div>
+  </div>
 
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center hidden">
-        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-80 text-slate-800 dark:text-slate-100">
-            <h2 class="text-2xl font-bold mb-4">Settings</h2>
-            <label class="block mb-4">Board Size
-                <select id="board-size" class="mt-1 block w-full border border-slate-300 dark:border-slate-700 rounded p-2 bg-white dark:bg-slate-700">
-                    <option value="4">4 x 4</option>
-                    <option value="6">6 x 6</option>
-                    <option value="8">8 x 8</option>
-                </select>
-            </label>
-            <label class="flex items-center mb-6">
-                <input id="dark-mode-toggle" type="checkbox" class="mr-2">
-                <span>Dark Mode</span>
-            </label>
-            <div class="flex justify-end space-x-2">
-                <button id="close-settings" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 rounded">Cancel</button>
-                <button id="save-settings" class="px-4 py-2 bg-indigo-600 text-white rounded">Save</button>
-            </div>
-        </div>
+  <!-- Lose Modal -->
+  <div id="lose-modal" class="modal fixed inset-0 bg-black/60 flex items-center justify-center opacity-0 pointer-events-none">
+    <div class="modal-panel bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 text-center max-w-md w-11/12">
+      <h2 class="text-4xl font-extrabold text-rose-500 mb-2">Time’s Up! 💥</h2>
+      <p id="lose-text" class="text-slate-600 dark:text-slate-300 mb-6"></p>
+      <div class="grid grid-cols-2 gap-3">
+        <button id="retry" class="px-4 py-3 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500">Try Again</button>
+        <button id="close-lose" class="px-4 py-3 rounded-lg bg-slate-200 dark:bg-slate-700 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 focus:ring-2 focus:ring-indigo-500">Close</button>
+      </div>
     </div>
+  </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // --- DOM Elements ---
-            const gameBoard = document.getElementById('game-board');
-            const movesCountEl = document.getElementById('moves-count');
-            const restartButton = document.getElementById('restart-button');
-            const playAgainButton = document.getElementById('play-again-button');
-            const winModal = document.getElementById('win-modal');
-            const winStatsEl = document.getElementById('win-stats');
-            const timerEl = document.getElementById('timer');
-            const settingsButton = document.getElementById('settings-button');
-            const settingsModal = document.getElementById('settings-modal');
-            const saveSettingsButton = document.getElementById('save-settings');
-            const closeSettingsButton = document.getElementById('close-settings');
-            const boardSizeSelect = document.getElementById('board-size');
-            const darkModeToggle = document.getElementById('dark-mode-toggle');
+  <!-- Settings Modal -->
+  <div id="settings" class="modal fixed inset-0 bg-black/60 flex items-center justify-center opacity-0 pointer-events-none">
+    <div class="modal-panel bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 w-[22rem] text-slate-800 dark:text-slate-100">
+      <h3 class="text-2xl font-bold mb-4">Settings</h3>
 
-            // --- Game Configuration ---
-            const symbols = ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🐤','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🦂','🐢','🐍'];
-            let boardSize = 4; // Default grid dimension (4x4)
-            let totalPairs = (boardSize * boardSize) / 2;
+      <label class="block mb-4">Board Size
+        <select id="size" class="mt-1 block w-full border border-slate-300 dark:border-slate-700 rounded p-2 bg-white dark:bg-slate-700">
+          <option value="2">2 × 2 (Goldfish)</option>
+          <option value="4" selected>4 × 4</option>
+          <option value="6">6 × 6</option>
+          <option value="8">8 × 8</option>
+        </select>
+      </label>
 
-            // --- Game State Variables ---
-            let cards = [];
-            let flippedCards = [];
-            let matchedPairs = 0;
-            let moves = 0;
-            let isBoardLocked = false;
-            let timerInterval;
-            let timeElapsed = 0;
+      <label class="block mb-4">Theme
+        <select id="theme" class="mt-1 block w-full border border-slate-300 dark:border-slate-700 rounded p-2 bg-white dark:bg-slate-700">
+          <option value="animals" selected>Animals</option>
+          <option value="fruits">Fruits</option>
+          <option value="space">Space</option>
+          <option value="shapes">Shapes</option>
+        </select>
+      </label>
 
-            // --- Functions ---
+      <label class="block mb-4">Mode
+        <select id="mode" class="mt-1 block w-full border border-slate-300 dark:border-slate-700 rounded p-2 bg-white dark:bg-slate-700">
+          <option value="chill" selected>Chill (no timer)</option>
+          <option value="blitz">Blitz (countdown)</option>
+        </select>
+      </label>
 
-            /**
-             * Shuffles an array in place using the Fisher-Yates algorithm.
-             * @param {Array} array The array to shuffle.
-             * @returns {Array} The shuffled array.
-             */
-            function shuffle(array) {
-                for (let i = array.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [array[i], array[j]] = [array[j], array[i]];
-                }
-                return array;
-            }
+      <label class="flex items-center gap-2 mb-4">
+        <input id="dark" type="checkbox">
+        <span>Dark Mode</span>
+      </label>
 
-            /**
-             * Initializes and starts a new game.
-             */
-            function startGame() {
-                // Reset game state
-                isBoardLocked = false;
-                flippedCards = [];
-                matchedPairs = 0;
-                moves = 0;
-                updateMoves();
+      <div class="flex justify-end gap-2 pt-2">
+        <button id="settings-cancel" class="px-4 py-2 rounded bg-slate-200 dark:bg-slate-700">Cancel</button>
+        <button id="settings-save" class="px-4 py-2 rounded bg-indigo-600 text-white">Save</button>
+      </div>
+    </div>
+  </div>
 
-                totalPairs = (boardSize * boardSize) / 2;
+  <script>
+    // —— Data ——
+    const THEMES = {
+      animals: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🐤','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🦂','🐢','🐍'],
+      fruits:  ['🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🌶️','🫑','🍆','🥑','🥦','🥕','🧄','🧅','🍠','🥔','🌽','🥒','🥬','🫛','🫘'],
+      space:   ['🚀','🛰️','🪐','🌌','☄️','🌠','🌙','⭐','🌞','🛸','👩‍🚀','🧑‍🚀','🔭','📡','🌍','🌋','🪐','🌑','🌗','🌕','🌖','🌒','🌛','🛰️','🛰️','🛰️','🪐','☄️','🛸','🧑‍🚀','🔭','📡'],
+      shapes:  ['🔺','🔻','🔸','🔹','🔶','🔷','⬛','⬜','🟥','🟧','🟨','🟩','🟦','🟪','🟫','⚪','⚫','◻️','◼️','🔳','🔲','🔘','➕','➖','✴️','✳️','❇️','✡️','✳️','✴️','❎','✅']
+    };
 
-                // Reset and start timer
-                clearInterval(timerInterval);
-                timeElapsed = 0;
-                updateTimer();
-                timerInterval = setInterval(() => {
-                    timeElapsed++;
-                    updateTimer();
-                }, 1000);
+    // —— State ——
+    let boardSize = 4;
+    let mode = 'chill'; // 'chill' | 'blitz'
+    let theme = 'animals';
 
-                // Hide win modal
-                winModal.classList.add('hidden');
-                winModal.firstElementChild.classList.remove('scale-100');
-                winModal.firstElementChild.classList.add('scale-95');
+    let totalPairs = 0;
+    let matchedPairs = 0;
+    let moves = 0;
+    let combo = 0;
+    let firstFlipMade = false;
 
-                // Create and shuffle card symbols
-                const gameSymbols = symbols.slice(0, totalPairs);
-                const cardDeck = shuffle([...gameSymbols, ...gameSymbols]);
+    let flipped = [];
+    let locked = false;
 
-                // Clear the board and create new cards
-                gameBoard.innerHTML = '';
-                cards = []; // Clear the cards array
-                gameBoard.style.gridTemplateColumns = `repeat(${boardSize}, minmax(0, 1fr))`;
+    let timerId = null;
+    let elapsed = 0;     // seconds (chill)
+    let remaining = 0;   // seconds (blitz)
+    let pausedForModal = false;
 
-                cardDeck.forEach(symbol => {
-                    const cardElement = createCard(symbol);
-                    gameBoard.appendChild(cardElement);
-                    cards.push(cardElement);
-                });
-            }
+    // —— DOM ——
+    const boardEl = document.getElementById('board');
+    const movesEl = document.getElementById('moves');
+    const timeEl = document.getElementById('time');
+    const bestEl = document.getElementById('best');
+    const progressEl = document.getElementById('progress');
+    const pairsDoneEl = document.getElementById('pairs-done');
+    const pairsTotalEl = document.getElementById('pairs-total');
+    const comboWrap = document.getElementById('combo');
+    const comboNum = document.getElementById('combo-num');
 
-            /**
-             * Creates a card element with front and back faces.
-             * @param {string} symbol The symbol for the card's front face.
-             * @returns {HTMLElement} The created card element.
-             */
-            function createCard(symbol) {
-                const card = document.createElement('div');
-                card.className = 'card aspect-square';
-                card.dataset.symbol = symbol;
+    const restartBtn = document.getElementById('restart');
+    const settingsBtn = document.getElementById('settings-btn');
+    const goldfishBtn = document.getElementById('goldfish');
 
-                card.innerHTML = `
-                    <div class="card-face card-face-back w-full h-full rounded-lg bg-indigo-500 shadow-md flex items-center justify-center text-3xl text-white">
-                        ?
-                    </div>
-                    <div class="card-face card-face-front w-full h-full rounded-lg bg-white dark:bg-slate-700 shadow-lg flex items-center justify-center text-4xl md:text-5xl">
-                        ${symbol}
-                    </div>
-                `;
+    const modalSettings = document.getElementById('settings');
+    const settingsSave = document.getElementById('settings-save');
+    const settingsCancel = document.getElementById('settings-cancel');
+    const sizeSel = document.getElementById('size');
+    const themeSel = document.getElementById('theme');
+    const modeSel = document.getElementById('mode');
+    const darkToggle = document.getElementById('dark');
 
-                card.addEventListener('click', () => handleCardClick(card));
-                return card;
-            }
+    const winModal = document.getElementById('win-modal');
+    const winText = document.getElementById('win-text');
+    const winBest = document.getElementById('win-best');
+    const playAgainBtn = document.getElementById('play-again');
+    const closeWinBtn = document.getElementById('close-win');
 
-            /**
-             * Handles the logic when a card is clicked.
-             * @param {HTMLElement} card The card element that was clicked.
-             */
-            function handleCardClick(card) {
-                if (isBoardLocked || card.classList.contains('is-flipped') || flippedCards.includes(card)) {
-                    return; // Ignore clicks if board is locked, card is already flipped or is one of the current two flipped cards
-                }
+    const loseModal = document.getElementById('lose-modal');
+    const loseText = document.getElementById('lose-text');
+    const retryBtn = document.getElementById('retry');
+    const closeLoseBtn = document.getElementById('close-lose');
 
-                flipCard(card);
-                flippedCards.push(card);
+    const confettiCanvas = document.getElementById('confetti-canvas');
 
-                if (flippedCards.length === 2) {
-                    incrementMoves();
-                    checkForMatch();
-                }
-            }
+    // —— Utils ——
+    const qs = (s, el=document)=>el.querySelector(s);
+    const qsa = (s, el=document)=>[...el.querySelectorAll(s)];
+    const clamp = (v, a, b)=>Math.max(a, Math.min(b, v));
+    const shuffle = (arr)=>{ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]] } return arr; };
 
-            /**
-             * Flips a card over by adding/removing the 'is-flipped' class.
-             * @param {HTMLElement} card The card to flip.
-             */
-            function flipCard(card) {
-                card.classList.add('is-flipped');
-            }
+    function formatTime(sec){
+      const m = Math.floor(sec/60);
+      const s = sec%60;
+      return `${m}:${String(s).padStart(2,'0')}`;
+    }
 
-            /**
-             * Unflips a card by removing the 'is-flipped' class.
-             * @param {HTMLElement} card The card to unflip.
-             */
-            function unflipCard(card) {
-                card.classList.remove('is-flipped');
-            }
+    function bestKey(){ return `best_${mode}_${boardSize}`; }
+    function loadBest(){
+      const b = localStorage.getItem(bestKey());
+      return b ? JSON.parse(b) : null;
+    }
+    function saveBest(obj){
+      localStorage.setItem(bestKey(), JSON.stringify(obj));
+    }
+    function updateBestUI(){
+      const b = loadBest();
+      bestEl.textContent = b ? `${b.moves} moves • ${formatTime(b.time)}` : '—';
+    }
 
-            /**
-             * Checks if the two currently flipped cards are a match.
-             */
-            function checkForMatch() {
-                isBoardLocked = true;
-                const [cardOne, cardTwo] = flippedCards;
+    // —— Audio (WebAudio beeps, no external files) ——
+    let audioCtx;
+    function ensureAudio(){ audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
+    function beep(freq=600, dur=120, type='sine', vol=0.08){
+      try{
+        const ctx = ensureAudio();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = type; o.frequency.value = freq;
+        g.gain.setValueAtTime(vol, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur/1000);
+        o.connect(g).connect(ctx.destination);
+        o.start(); o.stop(ctx.currentTime + dur/1000);
+      }catch(e){}
+    }
+    function fanfare(){
+      const seq = [660, 880, 990, 1320];
+      seq.forEach((f,i)=>setTimeout(()=>beep(f,140,'triangle',0.07), i*140));
+    }
+    function sadtrill(){
+      const seq = [440, 370, 330];
+      seq.forEach((f,i)=>setTimeout(()=>beep(f,200,'sawtooth',0.06), i*180));
+    }
 
-                if (cardOne.dataset.symbol === cardTwo.dataset.symbol) {
-                    // It's a match!
-                    disableMatchedCards();
-                } else {
-                    // Not a match
-                    unflipMismatchedCards();
-                }
-            }
-
-            /**
-             * Disables matched cards and checks for a win condition.
-             */
-            function disableMatchedCards() {
-                const [cardOne, cardTwo] = flippedCards;
-                cardOne.removeEventListener('click', handleCardClick);
-                cardTwo.removeEventListener('click', handleCardClick);
-                matchedPairs++;
-                resetBoard();
-
-                if (matchedPairs === totalPairs) {
-                    setTimeout(showWinModal, 800);
-                }
-            }
-
-            /**
-             * Flips mismatched cards back over after a short delay.
-             */
-            function unflipMismatchedCards() {
-                setTimeout(() => {
-                    flippedCards.forEach(unflipCard);
-                    resetBoard();
-                }, 1200); // 1.2 second delay to see the cards
-            }
-
-
-            /**
-             * Resets the flipped cards array and unlocks the board.
-             */
-            function resetBoard() {
-                flippedCards = [];
-                isBoardLocked = false;
-            }
-
-            /**
-             * Increments the move counter and updates the display.
-             */
-            function incrementMoves() {
-                moves++;
-                updateMoves();
-            }
-            
-            /**
-             * Updates the move counter display.
-             */
-            function updateMoves() {
-                movesCountEl.textContent = moves;
-            }
-
-            /**
-             * Updates the timer display.
-             */
-            function updateTimer() {
-                const minutes = Math.floor(timeElapsed / 60);
-                const seconds = timeElapsed % 60;
-                timerEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-            }
-
-            /**
-             * Displays the win modal with final stats.
-             */
-            function showWinModal() {
-                clearInterval(timerInterval);
-                winStatsEl.textContent = `You completed the game in ${moves} moves and ${timerEl.textContent}.`;
-                winModal.classList.remove('hidden');
-                setTimeout(() => {
-                    winModal.firstElementChild.classList.add('scale-100');
-                }, 50); // Small delay for the transition to trigger
-            }
-
-            function openSettings() {
-                boardSizeSelect.value = boardSize;
-                darkModeToggle.checked = document.documentElement.classList.contains('dark');
-                settingsModal.classList.remove('hidden');
-            }
-
-            function closeSettings() {
-                settingsModal.classList.add('hidden');
-            }
-
-            // --- Event Listeners ---
-            restartButton.addEventListener('click', startGame);
-            playAgainButton.addEventListener('click', startGame);
-            settingsButton.addEventListener('click', openSettings);
-            closeSettingsButton.addEventListener('click', closeSettings);
-            saveSettingsButton.addEventListener('click', () => {
-                boardSize = parseInt(boardSizeSelect.value, 10);
-                document.documentElement.classList.toggle('dark', darkModeToggle.checked);
-                closeSettings();
-                startGame();
-            });
-
-            // --- Initial Game Start ---
-            startGame();
+    // —— Confetti ——
+    function launchConfetti(duration=1200){
+      const c = confettiCanvas;
+      const ctx = c.getContext('2d');
+      c.width = innerWidth; c.height = innerHeight;
+      c.classList.remove('hidden');
+      const N = 140;
+      const parts = Array.from({length:N}, ()=>({
+        x: Math.random()*c.width,
+        y: -20 - Math.random()*c.height*0.5,
+        r: 4 + Math.random()*6,
+        vx: -1 + Math.random()*2,
+        vy: 2 + Math.random()*3,
+        rot: Math.random()*Math.PI,
+        vr: -0.2 + Math.random()*0.4,
+        col: `hsl(${Math.floor(Math.random()*360)},90%,60%)`
+      }));
+      let last = performance.now();
+      let t0 = last;
+      function step(now){
+        const dt = (now-last)/16.67; last = now;
+        ctx.clearRect(0,0,c.width,c.height);
+        parts.forEach(p=>{
+          p.x += p.vx*dt; p.y += p.vy*dt; p.rot += p.vr*dt;
+          if(p.y>c.height+20) p.y = -20;
+          ctx.save();
+          ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+          ctx.fillStyle=p.col;
+          ctx.fillRect(-p.r, -p.r, p.r*2, p.r*2);
+          ctx.restore();
         });
-    </script>
+        if(now - t0 < duration) requestAnimationFrame(step);
+        else { c.classList.add('hidden'); ctx.clearRect(0,0,c.width,c.height); }
+      }
+      requestAnimationFrame(step);
+    }
+    window.addEventListener('resize', ()=> {
+      if(!confettiCanvas.classList.contains('hidden')){
+        confettiCanvas.width = innerWidth; confettiCanvas.height = innerHeight;
+      }
+    });
+
+    // —— Timer ——
+    function stopTimer(){ clearInterval(timerId); timerId = null; }
+    function resetTimer(){ stopTimer(); elapsed=0; remaining = calcBlitzTime(boardSize); updateTimeUI(); }
+    function startTimerIfNeeded(){
+      if(mode==='chill'){
+        if(!timerId){ timerId = setInterval(()=>{ elapsed++; updateTimeUI(); },1000); }
+      }else{ // blitz runs immediately when first flip happens
+        if(!timerId){ timerId = setInterval(()=>{ remaining--; updateTimeUI(); if(remaining<=0){ remaining=0; onLose(); } },1000); }
+      }
+    }
+    function calcBlitzTime(size){
+      // Tuned per board size for fair challenge
+      return ({2:20, 4:90, 6:210, 8:420})[size] || 120;
+    }
+    function updateTimeUI(){
+      timeEl.textContent = mode==='chill' ? formatTime(elapsed) : `⏳ ${formatTime(remaining)}`;
+    }
+
+    // —— Game —— 
+    function setGridTemplate(){
+      boardEl.style.gridTemplateColumns = `repeat(${boardSize}, minmax(0,1fr))`;
+    }
+    function newDeck(){
+      totalPairs = (boardSize*boardSize)/2;
+      const set = THEMES[theme];
+      const picks = set.slice(0, totalPairs);
+      return shuffle([...picks, ...picks]);
+    }
+
+    function initGame(){
+      // Reset
+      matchedPairs = 0; moves = 0; combo = 0; firstFlipMade = false; flipped = []; locked=false;
+      pairsDoneEl.textContent = 0; pairsTotalEl.textContent = totalPairs;
+      progressEl.style.width = '0%';
+      movesEl.textContent = '0';
+      comboWrap.classList.add('hidden');
+      updateBestUI();
+      resetTimer();
+      // Build board
+      const deck = newDeck();
+      boardEl.innerHTML = '';
+      setGridTemplate();
+      deck.forEach((symbol, idx)=>{
+        const card = createCard(symbol, idx);
+        boardEl.appendChild(card);
+      });
+      // focus first
+      const first = qs('[data-index="0"] .card-btn');
+      if(first) first.focus();
+    }
+
+    function createCard(symbol, index){
+      const wrapper = document.createElement('div');
+      wrapper.className = 'relative aspect-square select-none';
+      wrapper.dataset.symbol = symbol;
+      wrapper.dataset.index = index;
+
+      const btn = document.createElement('button');
+      btn.className = 'card-btn group w-full h-full focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-400 rounded-xl';
+      btn.setAttribute('aria-label', 'Hidden card');
+      btn.dataset.index = index;
+      btn.addEventListener('click', ()=>onCard(btn.parentElement));
+      btn.addEventListener('keydown', (e)=>{
+        const cols = boardSize;
+        let i = parseInt(btn.dataset.index,10);
+        if(['ArrowRight','ArrowLeft','ArrowUp','ArrowDown'].includes(e.key)){
+          e.preventDefault();
+          if(e.key==='ArrowRight') i = clamp(i+1, 0, boardSize*boardSize-1);
+          if(e.key==='ArrowLeft')  i = clamp(i-1, 0, boardSize*boardSize-1);
+          if(e.key==='ArrowUp')    i = clamp(i-cols,0, boardSize*boardSize-1);
+          if(e.key==='ArrowDown')  i = clamp(i+cols,0, boardSize*boardSize-1);
+          const next = qs(`[data-index="${i}"] .card-btn`);
+          if(next) next.focus();
+        } else if(e.key===' ' || e.key==='Enter'){
+          e.preventDefault(); onCard(btn.parentElement);
+        }
+      });
+
+      const inner = document.createElement('div');
+      inner.className = 'card-wrap rounded-xl shadow-md';
+      inner.innerHTML = `
+        <div class="card-face card-back rounded-xl bg-[var(--card-back)] text-white flex items-center justify-center text-2xl sm:text-3xl md:text-4xl font-bold">?</div>
+        <div class="card-face card-front rounded-xl bg-white dark:bg-slate-700 text-4xl sm:text-5xl md:text-6xl flex items-center justify-center">${symbol}</div>
+      `;
+
+      wrapper.appendChild(btn);
+      wrapper.appendChild(inner);
+      return wrapper;
+    }
+
+    function flip(card){
+      card.querySelector('.card-wrap').classList.add('is-flipped');
+      card.classList.remove('mismatch');
+      card.querySelector('.card-btn').setAttribute('aria-label', `Revealed ${card.dataset.symbol}`);
+    }
+    function unflip(card){
+      card.querySelector('.card-wrap').classList.remove('is-flipped');
+      card.querySelector('.card-btn').setAttribute('aria-label','Hidden card');
+    }
+
+    function onCard(card){
+      if(locked) return;
+      const alreadyFlipped = card.querySelector('.card-wrap').classList.contains('is-flipped');
+      const alreadyMatched = card.classList.contains('matched');
+      if(alreadyFlipped || alreadyMatched) return;
+
+      // Start timer on first flip
+      if(!firstFlipMade){ firstFlipMade = true; startTimerIfNeeded(); }
+
+      flip(card);
+      flipped.push(card);
+      beep(700,90,'sine',0.05);
+
+      if(flipped.length===2){
+        moves++; movesEl.textContent = moves;
+        const [a,b] = flipped;
+        if(a.dataset.symbol === b.dataset.symbol){
+          // Match
+          combo = Math.min(combo+1, 9);
+          if(combo>1){ comboNum.textContent = combo; comboWrap.classList.remove('hidden'); }
+          lockBoard();
+          setTimeout(()=>{
+            a.classList.add('matched');
+            b.classList.add('matched');
+            a.querySelector('.card-btn').disabled = true;
+            b.querySelector('.card-btn').disabled = true;
+            matchedPairs++; pairsDoneEl.textContent = matchedPairs;
+            progressEl.style.width = `${Math.floor((matchedPairs/totalPairs)*100)}%`;
+            beep(880,120,'triangle',0.07); setTimeout(()=>beep(1046,120,'triangle',0.07),110);
+            clearFlipped(); unlockBoard();
+            if(matchedPairs===totalPairs) onWin();
+          },220);
+        }else{
+          // Mismatch
+          combo = 0; comboWrap.classList.add('hidden');
+          lockBoard();
+          a.classList.add('mismatch'); b.classList.add('mismatch');
+          beep(240,120,'sawtooth',0.05);
+          setTimeout(()=>{ unflip(a); unflip(b); clearFlipped(); unlockBoard(); }, 800);
+        }
+      }
+    }
+
+    function clearFlipped(){ flipped = []; }
+    function lockBoard(){ locked = true; }
+    function unlockBoard(){ locked = false; }
+
+    // —— End States ——
+    function onWin(){
+      stopTimer(); fanfare(); launchConfetti(1500);
+      const timeTaken = mode==='chill' ? elapsed : (calcBlitzTime(boardSize)-remaining);
+      winText.textContent = `Completed ${boardSize}×${boardSize} • ${moves} moves • ${formatTime(timeTaken)}.`;
+      const best = loadBest();
+      let improved = false;
+      if(!best || timeTaken < best.time || (timeTaken===best.time && moves < best.moves)){
+        saveBest({time: timeTaken, moves});
+        improved = true;
+      }
+      winBest.textContent = improved ? '🔥 New personal best!' : (best ? `Personal best: ${best.moves} moves • ${formatTime(best.time)}` : '');
+      openModal(winModal);
+    }
+
+    function onLose(){
+      stopTimer(); sadtrill();
+      // Brief screen shake
+      document.body.classList.add('shake-screen');
+      loseText.textContent = `You matched ${matchedPairs}/${totalPairs} pairs. Try a smaller grid or a different theme!`;
+      openModal(loseModal);
+      setTimeout(()=>document.body.classList.remove('shake-screen'), 600);
+    }
+
+    // —— Modals ——
+    function openModal(mod){
+      mod.classList.add('open');
+      mod.style.opacity = '1';
+      mod.style.pointerEvents = 'auto';
+      pausedForModal = true;
+      stopTimer();
+    }
+    function closeModal(mod){
+      mod.classList.remove('open');
+      mod.style.opacity = '0';
+      mod.style.pointerEvents = 'none';
+      if(pausedForModal && firstFlipMade){ // resume timer if game had started
+        if(mode==='chill' || (mode==='blitz' && remaining>0)) startTimerIfNeeded();
+      }
+      pausedForModal = false;
+    }
+
+    // —— Settings ——
+    function openSettings(){
+      sizeSel.value = String(boardSize);
+      themeSel.value = theme;
+      modeSel.value = mode;
+      darkToggle.checked = document.documentElement.classList.contains('dark');
+      openModal(modalSettings);
+    }
+    function applySettings(){
+      boardSize = parseInt(sizeSel.value,10);
+      theme = themeSel.value;
+      mode = modeSel.value;
+      document.documentElement.classList.toggle('dark', darkToggle.checked);
+      totalPairs = (boardSize*boardSize)/2;
+      initGame();
+    }
+
+    // —— Events ——
+    restartBtn.addEventListener('click', initGame);
+    settingsBtn.addEventListener('click', openSettings);
+    settingsSave.addEventListener('click', ()=>{ closeModal(modalSettings); applySettings(); });
+    settingsCancel.addEventListener('click', ()=> closeModal(modalSettings));
+    goldfishBtn.addEventListener('click', ()=>{ boardSize=2; mode='chill'; theme='animals'; applySettings(); });
+
+    playAgainBtn.addEventListener('click', ()=>{ closeModal(winModal); initGame(); });
+    closeWinBtn.addEventListener('click', ()=> closeModal(winModal));
+
+    retryBtn.addEventListener('click', ()=>{ closeModal(loseModal); initGame(); });
+    closeLoseBtn.addEventListener('click', ()=> closeModal(loseModal));
+
+    // Dismiss modals with backdrop click or Esc
+    [winModal, loseModal, modalSettings].forEach(mod=>{
+      mod.addEventListener('click', (e)=>{ if(e.target===mod) closeModal(mod); });
+    });
+    window.addEventListener('keydown', (e)=>{
+      if(e.key==='Escape'){
+        [winModal, loseModal, modalSettings].forEach(mod=>{
+          if(getComputedStyle(mod).pointerEvents!=='none') closeModal(mod);
+        });
+      }
+    });
+
+    // —— Boot ——
+    (function boot(){
+      // Dark mode respect
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.classList.toggle('dark', prefersDark);
+      totalPairs = (boardSize*boardSize)/2;
+      setGridTemplate();
+      initGame();
+      updateTimeUI();
+    })();
+  </script>
 </body>
 </html>
